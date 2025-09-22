@@ -1,0 +1,271 @@
+---
+title: "Project_1_12"
+output: html_document
+date: "2025-09-19"
+bibliography: packages.bib
+output: 
+  html_document:
+    latex_engine : xelatex
+    df_print: default
+    highlight: zenburn
+    toc: TRUE
+    toc_depth: 3
+mainfont : NanumGothic    
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+# Анализ данных сервиса проката велосипедов
+
+Сервисы проката велосипедов и самокатов продолжают набирать популярность благодаря своему удобству и скорости. Однако, они довольно сильно зависят от
+погодных условий
+• В нашем распоряжении есть дневные данные за 2011-2012 годы по поездкам на
+велосипедах в Вашингтоне
+• 731 день
+• 17 колонок со значениями
+
+**Цель исследования**
+
+Используя данные сервиса проката велосипедов и самокатов необходимо выявить факторы влияющие на востребованность аренды
+
+**Задачи исследования**
+
+1. Анализ информации о данных: загрузка и изучение общей информации из датасетов;
+2. Предобработка данных: поиск дубликатов, пропусков, аномалий. Исправление, удаление данных;
+3. Исследовательский анализ данных: описание и визуализация общей информации о погодных условиях
+4. Проверка гипотез
+
+**Общий вывод:** резюмирование полученных результатов, формулировка ключевых выводов и рекомендаций
+
+```{r libraries}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(gridExtra)
+main_dir <- dirname(rstudioapi::getSourceEditorContext()$path) 
+setwd(main_dir)
+```
+
+## Анализ информации о данных
+
+Загрузим данные
+```{r data import}
+data <- read.csv("day.csv", sep=",", stringsAsFactors = FALSE)
+```
+
+Выведем рамеры датафрейма
+
+```{r}
+dim(data)
+```
+
+Выведем структуру и типы столбцов
+
+```{r structure}
+str(data)
+```
+Выведем первые строки
+
+```{r head}
+head(data)
+```
+Посмотрим на количество пропусков по столбцам
+
+```{r}
+sapply(data, function(x) sum(is.na(x)))
+```
+Посмотрим на количество явных дубликатов
+```{r duplicates}
+sum(duplicated(data))
+```
+**Вывод:** В данных day 731 строка и 16 столбцов.Присутствуют пропуски в столбцах hum, windspeed, temp и registered. Явных дубликатов не обнаружено.
+
+## Предобработка данных
+
+**Удаление пропусков**
+
+Присутствуют пропуски в столбцах hum, windspeed, temp и registered. Так как пропусков немного, удалим эти строки с пропущенными значениями
+
+```{r delete na}
+data_clean <- na.omit(data)
+sapply(data_clean, function(x) sum(is.na(x)))
+```
+
+
+**Изменение типов данных**
+
+Приведем столбец dteday в тип данных дата
+```{r date}
+data_clean$dteday <- as.Date(data_clean$dteday, format = "%Y-%m-%d")
+class(data_clean$dteday)
+```
+Проверим за какой период у нас данные
+```{r period of date}
+start_date <- min(data_clean$dteday)
+end_date <- max(data_clean$dteday)
+print(paste("Диапазон дат:", start_date, "-", end_date))
+```
+В нашем датасете данные за два года, нужно будет учитывать это при агрегации по месяцам
+
+**Поиск аномалий**
+
+```{r unique values}
+cols <- c("season", "yr", "mnth", "holiday", "weekday", "workingday", "weathersit")
+unique_values_list <- lapply(data_clean[cols], unique)
+print(unique_values_list)
+```
+Аномальных значений в столбцах season, yr, mnth, holiday, weekday, workingday, weathershit не обнаружено
+
+**Выводы: ** В процессе предобработки данных на основе data был создан новый датафрейм data_clean, содержащий в себе следующие изменения:
+1. Удалены строки с пропущенными значениями в столбцах hum, windspeed, temp и registered.
+2. Тип данных в столбце dteday изменен
+
+## Исследовательский анализ данных
+
+**Статистический анализ признаков**
+
+```{r describe}
+summary(data_clean)
+```
+Создаем функцию для визуализации количественных признаков
+
+```{r num function}
+plot_columns_box_hist <- function(df, cols) {
+  for (col_name in cols) {
+    if (col_name %in% names(df) && is.numeric(df[[col_name]])) {
+      data_vec <- df[[col_name]]
+      
+      p_box <- ggplot(data.frame(x = data_vec), aes(x = "", y = x)) +
+               geom_boxplot() +
+               labs(title = paste("Boxplot of", col_name), y = col_name) +
+               theme_minimal()
+      
+      p_hist <- ggplot(data.frame(x = data_vec), aes(x = x)) +
+                geom_histogram(bins = 30, fill = "lightblue", color = "black") +
+                labs(title = paste("Histogram of", col_name), x = col_name, y = "Count") +
+                theme_minimal()
+      
+      # Выводим графики бок о бок
+      grid.arrange(p_box, p_hist, ncol = 2)
+    } else {
+      warning(paste("Column", col_name, "не существует или не числовая"))
+    }
+  }
+}
+```
+
+Строим графики для количественных признаков
+
+```{r num graphs}
+plot_columns_box_hist(data_clean, c("temp", "atemp", "hum", "windspeed", "casual", "registered", "cnt"))
+
+```
+Есть выброс в столбце hum. Удалим эту строку
+```{r hum filter}
+data_clean <- data_clean %>% filter(hum >= 0.1)
+summary(data_clean$hum)
+```
+```{r hum graph}
+plot_columns_box_hist(data_clean, c("hum"))
+```
+Анализируя количественные признаки в data_clean, можно сказать следущее: Большинство признаков распределено нормально. Медиана нормированных температур составляет 0,5. Половина температур находится в пределах 0,4 - 0,6.Количество зарегистрированных пользователей, как и количество велосипедов взятых на прокат тоже распределены нормально.Интересно, что количество незарегистрированных пользователей сосредоточено ближе к низким значениям.
+
+Создаем функцию для визуализации категориальных признаков
+```{r cat function}
+plot_categorical_features <- function(df, cat_columns) {
+  
+  for (column in cat_columns) {
+    if (column %in% names(df)) {
+      counts <- table(df[[column]])
+      counts_df <- as.data.frame(counts)
+      colnames(counts_df) <- c("category", "count")
+
+      p1 <- ggplot(counts_df, aes(x = category, y = count)) +
+        geom_bar(stat = "identity", fill = "orange", alpha = 0.7) +
+        labs(title = paste("Гистограмма", column), x = column, y = "Частота") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        theme_minimal()
+
+      p2 <- ggplot(counts_df, aes(x = "", y = count, fill = category)) +
+        geom_bar(stat = "identity", width = 1) +
+        coord_polar(theta = "y") +
+        geom_text(aes(label = scales::percent(count / sum(count), accuracy = 0.1)),
+                  position = position_stack(vjust = 0.5)) +
+        labs(title = paste("Распределение", column)) +
+        theme_void() +
+        theme(legend.position = "right")
+
+      grid.arrange(p1, p2, ncol = 2)
+    } else {
+      message(paste("Внимание: столбец", column, "отсутствует в данных"))
+    }
+  }
+}
+```
+Строим графики для категориальных признаков
+```{r cat graphs}
+plot_categorical_features(data_clean, c("season", "yr", "mnth", "holiday", "weekday", "workingday", "weathersit"))
+```
+Из всех построенных графиков нас интересует только график с погодой. За наблюдаемый период было 63,4% дней с ясной погодой, 33,8% туманных и облачных дней, и только в 2,8% случаев были небольшие осадки.
+
+**Выводы:**
+1. Строка с выбросом в hum была удалена.
+2. Анализируя количественные признаки в data_clean, можно сказать следущее: Большинство признаков распределено нормально. Медиана нормированных температур составляет 0,5. Половина температур находится в пределах 0,4 - 0,6.Количество зарегистрированных пользователей, как и количество велосипедов взятых на прокат тоже распределены нормально.Интересно, что количество незарегистрированных пользователей сосредоточено ближе к низким значениям.
+3.  За наблюдаемый период было 63,4% дней с ясной погодой, 33,8% туманных и облачных дней, и только в 2,8% случаев были небольшие осадки.
+
+## Проверка гипотез
+
+**Летом колличество пользователей сервиса проката больше чем зимой?**
+
+Проверим гипотезу: летом количество пользователей сервисом проката велосипедов и самокатов увеличивается
+
+H0: Количество пользователей (casual и registered) летом и зимой одинаковое
+
+H1: Летом сервис пользуется большей популярностью чем зимой
+
+alpha = 0.05
+```{r summer hyp normal}
+# Создаем новый столбец с суммой casual + registered
+data_clean$total_users <- data_clean$casual + data_clean$registered
+
+# Выбираем данные за лето и зиму
+summer <- data_clean$total_users[data_clean$season == 3]
+winter <- data_clean$total_users[data_clean$season == 1]
+
+# Проверка нормальности
+shapiro.test(summer)
+shapiro.test(winter)
+
+```
+Поскольку p-value в обоих случаях очень малы (намного меньше 0.05), нулевая гипотеза отвергается. Это значит, что распределения данных summer и winter статистически значимо отличаются от нормального распределения. Поэтому при анализе данных лучше использовать непараметрические тесты или учитывать ненормальность данных.
+
+Применим тест Манна-Уитни для проверки нашей гипотезы
+```{r manna test}
+wilcox.test(summer, winter, alternative = "greater")
+```
+p-value < 0.05, отвергаем нулевую гипотезу и считаем, что летом пользователей значительно больше.
