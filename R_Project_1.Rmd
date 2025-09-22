@@ -5,7 +5,23 @@ date: "2025-09-22"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,
+                      error = FALSE,
+                      message = FALSE,
+                      warning = FALSE)
+
+#Задаем рабочую директорию
+main_dir <- dirname(rstudioapi::getSourceEditorContext()$path) 
+setwd(main_dir)
+
+#Загружаем таблицу
+data <- read.csv("day.csv", header = T)
+
+#Подгружаем библиотеки
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(DescTools)
 ```
 
 # Анализ данных сервиса проката велосипедов
