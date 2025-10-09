@@ -112,9 +112,9 @@ ggplot(outlier_graph_data, aes(x = vals1, y = vals2))+ # создаем оси �
 fac_data_wo_na_and_outs <- fac_data_wo_na %>% filter(!(atemp < 0.3 & temp > 0.5))
 ```
 
-Также в переменной `hum` можно увидеть 2 очень низких значения, которые выбиваются из остального набора измерений. 
+Также в переменной `hum` можно увидеть 2 очень низких значения, которые выбиваются из остального набора измерений.
 
-``` {r boxplot, echo = F}
+```{r boxplot, echo = F}
 fac_data_wo_na_and_outs %>%
   select(c('hum', 'temp', 'atemp', 'windspeed')) %>%
   pivot_longer(cols = everything(), names_to = "variable", 'values_to' = 'value') %>%
