@@ -17,7 +17,10 @@ setwd(main_dir)
 library(tidyr)
 library(dplyr)
 library(ggplot2)
-library(DescTools)
+library(flextable)
+library(psych)
+library(tibble)
+library(DescTools) # для определения доверительных интервалов и их иллюстрации в Bar plots
 ```
 
 # Анализ данных сервиса проката велосипедов
@@ -38,7 +41,7 @@ str(data)
 
 1.  `instant`: id наблюдения
 2.  `dteday`: дата - season: время года - категориальная переменная
-3.  `yr`, `mnth`: год и месяц - категориальные переменные
+3.  `yr`, `mnth`: год (2011/2012) и месяц - категориальные переменные
 4.  `holiday`: наличие праздника в этот день - категориальная переменная
 5.  `weekday`: день недели - категориальная переменная
 6.  `workingday`: рабочий день или выходной - категориальная переменная
@@ -81,8 +84,19 @@ sapply(data_wo_na[c(3:9)], FUN = function(x) {
 
 ```{r factor setup, unclude=TRUE}
 fac_data_wo_na <- data_wo_na %>%
-  mutate(across(where(is.integer) & !c('instant', 'casual', 'registered', 'cnt'), as.factor))
-
+  mutate(dteday = as.Date(dteday)) %>%
+  mutate(season = as.factor(recode(season, "1"="Winter", "2"="Spring", "3"="Summer", "4"="Fall"))) %>%
+  mutate(yr = as.factor(ifelse(yr == "0", "2011", "2012"))) %>%
+  mutate(mnth = as.factor(recode(mnth, "1"="Jan", "2"="Feb", "3"="Mar",
+                       "4"="Apr", "5"="May", "6"="Jun",
+                       "7"="Jul", "8"="Aug", "9"="Sep",
+                       "10"="Oct", "11"="Nov", "12"="Dec"))) %>%
+  mutate(weekday = as.factor(weekdays(dteday, abbreviate = T))) %>%
+  mutate(holiday = as.factor(ifelse(holiday == "0", "no", "yes"))) %>%
+  mutate(workingday = as.factor(ifelse(workingday == "0", "no", "yes"))) %>%
+  mutate(weathersit = as.factor(recode(weathersit, "1"="Clear",
+                                       "2"="Fog/Cloudy", "3"="Snow/rain")))
+           
 str(fac_data_wo_na)
 ```
 
@@ -112,7 +126,7 @@ ggplot(outlier_graph_data, aes(x = vals1, y = vals2))+ # создаем оси �
 fac_data_wo_na_and_outs <- fac_data_wo_na %>% filter(!(atemp < 0.3 & temp > 0.5))
 ```
 
-Также в переменной `hum` можно увидеть 2 очень низких значения, которые выбиваются из остального набора измерений.
+Также в переменной `hum` можно увидеть 2 очень низких значения, которые выбиваются из остального набора измерений. Одно из таких измерений равно 0, что практически невозможно.
 
 ```{r boxplot, echo = F}
 fac_data_wo_na_and_outs %>%
@@ -123,9 +137,59 @@ fac_data_wo_na_and_outs %>%
   geom_boxplot()
 ```
 
-Однако если посмотреть на графики по переменным `hum` и `casual`, `registered`, `cnt`, то становится заметно, что этим низким измерениям влажности соответствует и низкое число клиентов сервиса проката. Вероятно, между этими переменными существует взаимосвязь, поэтому не стоит их пока что удалять.
+Однако если посмотреть на графики по переменным `hum` и `casual`, `registered`, `cnt`, то становится заметно, что этим низким измерениям влажности соответствует и низкое число клиентов сервиса проката. Вероятно, между этими переменными существует взаимосвязь, поэтому не стоит пока что удалять второй выброс. Удалим только `hum == 0`:
+```{r}
+fac_data_wo_na_and_outs <- fac_data_wo_na_and_outs %>% filter(hum!=0)
+```
 
 Также в переменной `windspeed` также есть ряд выбросов, один из которых сильно выше остального набора измерений. Тем не менее взаимосвязь этой переменной с другими пока не была изучена и удалять эти выбросы преждевременно также не стоит.
+
+Сравним изменения средний, стандартных отклонений и доверительных интервалов для переменных, выбросы из которых мы удалили:
+
+``` {r outlier check, echo = FALSE}
+after <- fac_data_wo_na_and_outs %>%
+  select(c(hum, temp, atemp)) %>%
+  pivot_longer(
+    everything(),
+    names_to = "variable",
+    values_to = "value"
+  ) %>%
+  group_by(variable) %>%
+  summarise(
+    "Среднее" = round(mean(value, na.rm = TRUE), 2),
+    "SD" = round(sd(value, na.rm = TRUE), 2),
+    "Lower_CI" = round(as.numeric(MeanCI(value, method = "boot")["lwr.ci"]),3),
+    "Upper_CI" = round(as.numeric(MeanCI(value, method = "boot")["upr.ci"]),3)
+  )
+
+before <- fac_data_wo_na %>%
+  select(c(hum, temp, atemp)) %>%
+  pivot_longer(
+    everything(),
+    names_to = "variable",
+    values_to = "value"
+  ) %>%
+  group_by(variable) %>%
+  summarise(
+    "Среднее" = round(mean(value, na.rm = TRUE), 2),
+    "SD" = round(sd(value, na.rm = TRUE), 2),
+    "Lower_CI" = round(as.numeric(MeanCI(value, method = "boot")["lwr.ci"]),3),
+    "Upper_CI" = round(as.numeric(MeanCI(value, method = "boot")["upr.ci"]),3)
+  )
+
+comparison <- rbind(before, after)
+colnames(comparison)[1] <- "Переменная"
+comparison <- comparison %>%
+  mutate("Статус" = c(rep("До удаления выбросов", 3), rep("После удаления выбросов", 3))) %>%
+  relocate("Статус", .before=1)
+
+comparison %>%
+  flextable() %>%
+  merge_v("Статус") %>%
+  align(align="center")
+  
+```
+Среднее и разброс данных не изменились для наших переменных, однако немного поменялись границы доверительных интервалов. Учитывая изменения доверительного интервала на тысячные доли единицы можно сказать, что удаление выбросов незначительно повлияло на данные. 
 
 Мы проверили данные на наличие выбросов, убрали отсутствующие значения и присвоили категориальным переменным правильный тип данных. Можно переходить к разведочному анализу данных.
 
@@ -135,13 +199,26 @@ work_data <- fac_data_wo_na_and_outs
 
 ## Разведочный анализ данных
 
-Посмотрим на результат функции summary():
+Посмотрим на результат функции summary() для количественных переменных:
 
-```{r summary, include=TRUE}
-summary(work_data)
+```{r summary, echo = FALSE, message=FALSE}
+work_data[10:16] %>%
+  describe() %>%
+  as_tibble(rownames="Переменная") %>%
+  select(c("Переменная", mean, sd, median, min, max, range)) %>%
+  mutate(across(where(is.numeric), ~ round(., 2))) %>%
+  flextable() %>%
+  align(align="center")
 ```
 
-Как мы видим, средние значения переменных `temp` и `atemp` довольно близки. Вероятно, следует проверить, достоверно ли они различаются или же субъективное ощущение температуры на улице не сильно отходит от реальной температуры. Также видно, что большинство клиентов сервиса - зарегистрированные пользователи, в то время как случайных пользователей сильно меньше. Нерабочих дней было в 2.5 раза меньше, чем рабочих и при исследовании зависимости числа арендованных велосипедов от статуса дня это нужно будет учитывать для получения достоверных результатов.Также можно заметить, что за 2 года измерений погожих дней оказалось больше всего, в то время как дождливых/снежных - меньше всего (вариант 3 переменной `weathersit`).
+Как мы видим, средние значения переменных `temp` и `atemp` довольно близки. Вероятно, следует проверить, достоверно ли они различаются или же субъективное ощущение температуры на улице не сильно отходит от реальной температуры. 
+
+Теперь посмотрим на категориальные перменные:
+```{r EDA category}
+summary(work_data[3:9])
+```
+
+Также видно, что большинство клиентов сервиса - зарегистрированные пользователи, в то время как случайных пользователей сильно меньше. Нерабочих дней было в 2.5 раза меньше, чем рабочих и при исследовании зависимости числа арендованных велосипедов от статуса дня это нужно будет учитывать для получения достоверных результатов.Также можно заметить, что за 2 года измерений погожих дней оказалось больше всего, в то время как дождливых/снежных - меньше всего (вариант 3 переменной `weathersit`).
 
 ### Исследование взаимодействий
 
@@ -199,8 +276,8 @@ alpha = 0.05
 work_data$total_users <- work_data$casual + work_data$registered
 
 # Выбираем данные за лето и зиму
-summer <- work_data$total_users[work_data$season == 3]
-winter <- work_data$total_users[work_data$season == 1]
+summer <- work_data$total_users[work_data$season == "Summer"]
+winter <- work_data$total_users[work_data$season == "Winter"]
 
 # Проверка нормальности
 shapiro.test(summer)
@@ -219,7 +296,7 @@ p-value \< 0.05, отвергаем нулевую гипотезу и счит�
 
 ```{r visual hyp1, echo = F}
 CI_bar_data <- work_data %>%
-  filter(season %in% c(1,3)) %>%
+  filter(season %in% c("Winter", "Summer")) %>%
   select(c(season, cnt)) %>%
   group_by(season) %>%
   summarise('lower' = MeanCI(cnt, conf.level = 0.95, method = 'boot', na.rm = T)["lwr.ci"],
@@ -251,8 +328,8 @@ alpha = 0.05
 work_data$registered_ratio <- work_data$registered / work_data$total_users
 
 # Выбираем данные за лето и зиму
-registered_ratio_summer <- work_data$registered_ratio[work_data$season == 3]
-registered_ratio_winter <- work_data$registered_ratio[work_data$season == 1]
+registered_ratio_summer <- work_data$registered_ratio[work_data$season == "Summer"]
+registered_ratio_winter <- work_data$registered_ratio[work_data$season == "Winter"]
 
 # Проводим тест Манна-Уитни с альтернативной гипотезой, что зимой доля больше
 wilcox.test(registered_ratio_winter, registered_ratio_summer, alternative = "greater")
@@ -280,8 +357,8 @@ table(work_data$workingday)
 
 # разделяем данные по рабочим и нерабочим дням
 # cnt - общее количество арендованных велосипедов за день
-cnt_working <- work_data$cnt[work_data$workingday == 1]
-cnt_nonworking <- work_data$cnt[work_data$workingday == 0]
+cnt_working <- work_data$cnt[work_data$workingday == "yes"]
+cnt_nonworking <- work_data$cnt[work_data$workingday == "no"]
 
 # для проверки нормального распределения данных проводим тест Шапиро-Уилка
 shapiro.test(cnt_working)
