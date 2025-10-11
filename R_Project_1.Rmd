@@ -261,9 +261,9 @@ ggplot(data = grouped_means, aes(x = mnth, y = mean_cnt))+
 
 ## Гипотеза 1
 
-**Летом количество пользователей сервиса проката больше чем зимой?**
+Для планирования запасов велосипедов и самокатов, оптимизации ценоообразования, планирования маркетинговых компаний и распределения бюджета на обслуживание критически важно понимание сезонной динамики спроса. В связи с этим проверим первую гипотезу:
 
-Проверим гипотезу: летом количество пользователей сервисом проката велосипедов и самокатов увеличивается
+**Летом количество пользователей сервиса проката больше чем зимой?**
 
 H0: Количество пользователей (casual и registered) летом и зимой одинаковое
 
@@ -272,12 +272,9 @@ H1: Летом сервис пользуется большей популярн
 alpha = 0.05
 
 ```{r summer hyp normal}
-# Создаем новый столбец с суммой casual + registered
-work_data$total_users <- work_data$casual + work_data$registered
-
 # Выбираем данные за лето и зиму
-summer <- work_data$total_users[work_data$season == "Summer"]
-winter <- work_data$total_users[work_data$season == "Winter"]
+summer <- work_data$cnt[work_data$season == "Summer"]
+winter <- work_data$cnt[work_data$season == "Winter"]
 
 # Проверка нормальности
 shapiro.test(summer)
@@ -302,7 +299,7 @@ CI_bar_data <- work_data %>%
   summarise('lower' = MeanCI(cnt, conf.level = 0.95, method = 'boot', na.rm = T)["lwr.ci"],
             "upper" = MeanCI(cnt, conf.level = 0.95, method = 'boot', na.rm = T)["upr.ci"],
             'mean_cnt' = mean(cnt, na.rm=T))%>%
-  mutate(season = c("winter", "summer"))
+  mutate(season = tolower(season)) 
 
 ggplot(data = CI_bar_data, aes(x = season, y = mean_cnt, fill = season))+
   geom_bar(stat="identity", position = 'dodge', fill=c('darkred', '#3C3C3C'))+
@@ -310,12 +307,13 @@ ggplot(data = CI_bar_data, aes(x = season, y = mean_cnt, fill = season))+
   ggsignif::geom_signif(y_position = 6300, xmin = 1, xmax = 2, annotation = "p-value < 2.2e-16")+
   labs(x = "Season", y = "Mean number of total users")
 ```
+На основании этого статистически подтвержденного факта можно сформулировать следующие практические рекомендации для сервиса проката: увеличивать парк транспорта к летнему сезону, разработать летние маркетинговые акции для привлечения новых пользователей и планировать техническое обслуживание на зимний период.
 
 ## Гипотеза 2
 
-**Зимой сервисом проката преимущественно пользуются зарегистрированные пользователи**
+Понимание поведения разных типов пользователей помогает разрабатывать целевые программы лояльности, создавать персонализированные предложения и оптимизировать сервис под нужды разных групп. В частности, важно понять, меняется ли состав пользовательской базы в зависимости от сезона. Сформулируем вторую гипотезу:
 
-Проверим гипотезу: зимой доля зарегистрированных пользователей больше чем летом
+**Зимой сервисом проката преимущественно пользуются зарегистрированные пользователи**
 
 H0: Доля зарегистрированных пользователей летом и зимой одинакова
 
@@ -323,9 +321,12 @@ H1: Зимой сервисом пользуются в основном зар�
 
 alpha = 0.05
 
+Для проверки гипотезы рассчитаем долю зарегистрированных пользователей как отношение количества зарегистрированных пользователей к общему количеству пользователей:
+registered_ratio = registered / (registered + casual)
+
 ```{r hyp2}
 # Создаем столбец с долей зарегистрированных пользователей
-work_data$registered_ratio <- work_data$registered / work_data$total_users
+work_data$registered_ratio <- work_data$registered / work_data$cnt
 
 # Выбираем данные за лето и зиму
 registered_ratio_summer <- work_data$registered_ratio[work_data$season == "Summer"]
@@ -336,8 +337,26 @@ wilcox.test(registered_ratio_winter, registered_ratio_summer, alternative = "gre
 
 ```
 
-В данном случае тест показал статистику около 25883 и очень маленькое значение p (около 2.2e-16), что говорит о значимом различии в долях зарегистрированных пользователей: зимой эта доля действительно значительно выше, чем летом
+```{r visual hyp2, echo = F}
+CI_ratio_data <- work_data %>%
+  filter(season %in% c("Winter", "Summer")) %>%
+  select(c(season, registered_ratio)) %>%
+  group_by(season) %>%
+  summarise('lower' = MeanCI(registered_ratio, conf.level = 0.95, method = 'boot', na.rm = T)["lwr.ci"],
+            "upper" = MeanCI(registered_ratio, conf.level = 0.95, method = 'boot', na.rm = T)["upr.ci"],
+            'mean_ratio' = mean(registered_ratio, na.rm = T)) %>%
+  mutate(season = tolower(season))
 
+ggplot(data = CI_ratio_data, aes(x = season, y = mean_ratio, fill = season)) +
+  geom_bar(stat = "identity", position = 'dodge', fill = c('darkred', '#3C3C3C')) +
+  geom_errorbar(aes(x = season, ymin = lower, ymax = upper), width = 0.2, position = position_dodge(0.9)) +
+  ggsignif::geom_signif(y_position = 0.95, xmin = 1, xmax = 2, annotation = "p-value < 2.2e-16") +
+  labs(x = "Season", y = "Mean ratio of registered users")
+```
+
+В данном случае тест показал статистику около 25883 и очень маленькое значение p (около 2.2e-16), что говорит о значимом различии в долях зарегистрированных пользователей: зимой эта доля действительно значительно выше, чем летом.
+
+Подтверждено, что зимой сервисом преимущественно пользуются зарегистрированные пользователи. Рекомендуем сфокусировать зимние маркетинговые усилия на удержании постоянных клиентов через программы лояльности и специальные условия. Это позволит максимизировать доход в низкий сезон за счет лояльной аудитории.
 ## Гипотеза 3
 
 **Kоличество аренд велосипедов в нерабочие дни выше, чем в рабочие.**
